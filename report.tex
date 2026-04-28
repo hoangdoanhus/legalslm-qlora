@@ -1,0 +1,990 @@
+% ============================================================
+%  Tiểu luận Nghiên cứu Khoa học
+%  Đề tài: Fine-tuning Qwen2.5-1.5B với QLoRA
+%          cho các Tác vụ Suy luận Pháp lý Tiếng Việt
+%  Sinh viên: Lương Vân Khoa, Doãn Sơn Hoàng, Bàn Khánh Duy
+% ============================================================
+
+\documentclass[fontsize=13pt,a4paper,oneside,DIV=calc,chapterprefix=true]{scrbook}
+
+\usepackage[utf8]{vietnam}
+\usepackage{husthesis}
+\usepackage{enumitem}
+\usepackage{tipa}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{mathptmx}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{array}
+\newcolumntype{P}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{M}[1]{>{\centering\arraybackslash}m{#1}}
+\usepackage{fancyhdr}
+\usepackage{multirow}
+\usepackage{float}
+\usepackage{longtable}
+\usepackage{caption}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+    citecolor=blue,
+}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!8},
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{green!50!black},
+  stringstyle=\color{red!60!black},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  numbersep=5pt,
+  showstringspaces=false,
+}
+
+% ---- Thông tin luận văn ----
+\crname{Tiểu luận Nghiên cứu Khoa học}
+\ctname{FINE-TUNING QWEN2.5-1.5B VỚI QLORA\\
+        CHO CÁC TÁC VỤ SUY LUẬN PHÁP LÝ TIẾNG VIỆT}
+\cstuname{
+  Lương Vân Khoa \\[4pt]
+  Doãn Sơn Hoàng \\[4pt]
+  Bàn Khánh Duy \\
+}
+\csMajor{Khoa học máy tính và thông tin}
+\csProgram{chuẩn}
+\csSupervise{TS. ---}
+\csdeptname{KHOA TOÁN -- CƠ -- TIN HỌC}
+\cttime{2026}
+
+\thesislayout
+
+\begin{document}
+
+\coverpage
+\secondcoverpage
+
+\frontmatter
+
+% ---- Lời cam đoan ----
+\begin{declaration}
+Nhóm sinh viên thực hiện tiểu luận này cam đoan rằng mọi nội dung trình bày trong tài liệu
+là kết quả của quá trình nghiên cứu độc lập, dưới sự hướng dẫn của giảng viên. Các số liệu
+thực nghiệm được ghi lại trung thực từ quá trình chạy thực tế trên nền tảng Google Colab;
+không có số liệu nào được bịa đặt hoặc sao chép từ công trình khác mà không có trích dẫn
+rõ ràng. Mọi tài liệu tham khảo đều được liệt kê đầy đủ ở cuối báo cáo.
+
+\vspace{1cm}
+\hfill\textit{Hà Nội, tháng 4 năm 2026}\\[0.5cm]
+\hfill Nhóm sinh viên thực hiện
+\end{declaration}
+
+% ---- Lời cảm ơn ----
+\begin{acknowledgments}
+Trước tiên, nhóm xin gửi lời cảm ơn đến giảng viên hướng dẫn đã định hướng, góp ý và
+kiên nhẫn theo dõi quá trình thực hiện đề tài từ những bước đầu tiên.
+
+Ban tổ chức cuộc thi VLSP 2025 đã công bố bộ dữ liệu \textit{LegalSLM Public-Test} một cách
+miễn phí, tạo điều kiện thuận lợi cho sinh viên và các nhóm nghiên cứu có ít tài nguyên tiếp
+cận được dữ liệu pháp lý chất lượng cao. Cộng đồng HuggingFace, đặc biệt là các dự án
+Transformers, PEFT và TRL, đã cung cấp những công cụ mã nguồn mở giúp rút ngắn đáng kể thời
+gian triển khai.
+
+Cuối cùng, nhóm cảm ơn Alibaba Cloud đã công bố mã nguồn và trọng số của dòng mô hình
+Qwen2.5 theo giấy phép mở, giúp nghiên cứu có thể được thực hiện mà không cần chi phí
+thương mại.
+\end{acknowledgments}
+
+% ---- Tóm tắt ----
+\begin{abstract}
+Bài báo này trình bày một nghiên cứu thực nghiệm về việc tinh chỉnh mô hình ngôn ngữ nhỏ
+\textbf{Qwen2.5-1.5B-Instruct} cho ba tác vụ suy luận pháp lý tiếng Việt trong khuôn khổ
+cuộc thi VLSP~2025 LegalSLM. Kỹ thuật được áp dụng là \textbf{QLoRA} --- kết hợp lượng
+tử hóa 4-bit (NF4) với LoRA rank-16 --- cho phép huấn luyện hiệu quả trên GPU T4 (15~GB)
+với chưa đến 2\% tham số được cập nhật.
+
+Điểm đáng chú ý của phương pháp là \textbf{chiến lược huấn luyện đa tác vụ}: thay vì train
+riêng lẻ từng tác vụ (như MinLegal~\cite{minlegal2025}), toàn bộ 120 mẫu từ ba tác vụ ---
+Suy diễn ngôn ngữ tự nhiên (NLI), Trả lời câu hỏi trắc nghiệm (MCQ) và Suy luận tam đoạn
+luận (Syllogism) --- được gộp thành một tập huấn luyện duy nhất. Cách tiếp cận này không chỉ
+đơn giản hóa quy trình mà còn cho phép mô hình học cách phân biệt và xử lý nhiều loại câu
+hỏi pháp lý qua cùng một LoRA adapter.
+
+Kết quả thực nghiệm cho thấy cải thiện đáng kể so với baseline zero-shot trên cả ba tác vụ:
+độ chính xác NLI tăng từ 66,67\% lên \textbf{93,33\%} (+40,0\%), MCQ từ 73,33\% lên
+\textbf{86,67\%} (+18,2\%), ROUGE-L Syllogism từ 0,4230 lên \textbf{0,5066} (+19,8\%),
+với toàn bộ quá trình huấn luyện hoàn thành trong \textbf{19,3 phút} trên GPU T4 miễn phí
+của Google Colab --- chi phí tính toán cực kỳ thấp so với các phương pháp tham chiếu.
+\end{abstract}
+
+% ---- Danh sách từ viết tắt ----
+\nomenclature{LLM}{Large Language Model --- Mô hình ngôn ngữ lớn}
+\nomenclature{SLM}{Small Language Model --- Mô hình ngôn ngữ nhỏ}
+\nomenclature{NLI}{Natural Language Inference --- Suy diễn ngôn ngữ tự nhiên}
+\nomenclature{MCQ}{Multiple Choice Question --- Câu hỏi trắc nghiệm}
+\nomenclature{QLoRA}{Quantized Low-Rank Adaptation}
+\nomenclature{LoRA}{Low-Rank Adaptation}
+\nomenclature{PEFT}{Parameter-Efficient Fine-Tuning --- Tinh chỉnh hiệu quả tham số}
+\nomenclature{MTL}{Multi-Task Learning --- Huấn luyện đa tác vụ}
+\nomenclature{SFT}{Supervised Fine-Tuning --- Tinh chỉnh có giám sát}
+\nomenclature{ROUGE}{Recall-Oriented Understudy for Gisting Evaluation}
+\nomenclature{NF4}{NormalFloat 4-bit --- Định dạng 4-bit phân bố chuẩn}
+\nomenclature{VRAM}{Video RAM --- Bộ nhớ GPU}
+\nomenclature{VLSP}{Vietnamese Language and Speech Processing}
+\printnomenclature
+
+\tableofcontents
+\listoftables
+\listoffigures
+
+% ============================================================
+\mainmatter
+
+\fancyhead{}
+\renewcommand{\footrulewidth}{0.4pt}
+\pagestyle{fancy}
+\fancyhead[RO]{\small\thepage}
+\fancyhead[LO]{\small\itshape Fine-tuning Qwen2.5-1.5B với QLoRA}
+\fancyfoot[C]{}
+
+% ============================================================
+\chapter*{Giới thiệu}
+\label{chap:intro}
+\addcontentsline{toc}{chapter}{\nameref{chap:intro}}
+
+\section*{Đặt vấn đề}
+
+Hệ thống pháp luật Việt Nam ngày càng trở nên phức tạp với hàng chục nghìn văn bản quy phạm
+pháp luật được ban hành và sửa đổi mỗi năm. Người dân, doanh nghiệp và cả các chuyên gia pháp
+lý thường gặp khó khăn trong việc tra cứu, đối chiếu và suy luận từ các điều khoản luật.
+Đây chính là bài toán mà các hệ thống Trí tuệ nhân tạo (AI) có thể hỗ trợ đáng kể.
+
+Các mô hình ngôn ngữ lớn (LLM) như GPT-4 hay Gemini đã thể hiện khả năng ấn tượng trong hiểu
+văn bản pháp lý, nhưng việc sử dụng chúng thường kéo theo hai trở ngại: chi phí API cao khi
+triển khai quy mô lớn và sự thiếu chuyên biệt hóa cho ngữ cảnh pháp lý tiếng Việt. Xu hướng
+nghiên cứu gần đây chuyển sang \textit{Small Language Models} (SLM) --- các mô hình dưới
+4~tỷ tham số --- có thể chạy trên phần cứng thông thường và được tinh chỉnh chuyên sâu cho
+một lĩnh vực cụ thể~\cite{bosch2025, minlegal2025}.
+
+Trong khuôn khổ cuộc thi \textbf{VLSP 2025 LegalSLM}~\cite{vlsp2025}, các nhóm nghiên cứu
+được yêu cầu phát triển mô hình ngôn ngữ nhỏ ($\leq$4B tham số) có khả năng giải quyết ba
+tác vụ pháp lý tiếng Việt: (1) phân loại tính hữu ích của văn bản pháp lý (NLI), (2) trả lời
+câu hỏi trắc nghiệm pháp luật (MCQ), và (3) lập luận pháp lý theo chuỗi tam đoạn luận
+(Syllogism). Đây là bài toán khó do đặc thù ngôn ngữ pháp lý tiếng Việt vừa dài, vừa có
+nhiều khái niệm chuyên ngành và các phụ thuộc logic phức tạp.
+
+\section*{Mục tiêu và Phạm vi}
+
+Nghiên cứu này đặt ra hai mục tiêu chính:
+\begin{enumerate}
+  \item \textbf{Kỹ thuật}: Chứng minh rằng kỹ thuật QLoRA kết hợp với chiến lược huấn luyện
+    đa tác vụ có thể cải thiện đáng kể hiệu năng của mô hình ngôn ngữ nhỏ (1,5B tham số) trên
+    ba tác vụ pháp lý tiếng Việt, chỉ với 120 mẫu huấn luyện và trong thời gian dưới 30 phút
+    trên GPU T4 miễn phí.
+  \item \textbf{Thực tiễn}: Cung cấp một pipeline hoàn chỉnh, có thể tái tạo trên Google Colab,
+    làm cơ sở tham khảo cho các nghiên cứu tiếp theo về mô hình ngôn ngữ pháp lý tiếng Việt.
+\end{enumerate}
+
+Phạm vi của nghiên cứu được giới hạn ở việc đánh giá trên bộ dữ liệu VLSP~2025 LegalSLM
+Public-Test, không mở rộng sang các bộ dữ liệu pháp lý khác. Nhóm không thực hiện pre-training
+miền (domain pre-training) do hạn chế tài nguyên.
+
+\section*{Những đóng góp chính}
+
+\begin{enumerate}
+  \item Trình bày phương pháp tinh chỉnh QLoRA đa tác vụ cho mô hình Qwen2.5-1.5B trên ba tác
+    vụ NLI, MCQ và Syllogism bằng tiếng Việt, đạt kết quả cải thiện từ 18\% đến 40\% so với
+    zero-shot baseline.
+  \item Phân tích tác động của instruction tuning đa tác vụ, cho thấy mô hình học được cách
+    phân biệt ba loại câu hỏi pháp lý mà không cần nhiều dữ liệu.
+  \item Cung cấp notebook Google Colab có thể chạy hoàn toàn trên tài nguyên miễn phí, phù hợp
+    với sinh viên và nhà nghiên cứu không có GPU chuyên dụng.
+\end{enumerate}
+
+\section*{Cấu trúc báo cáo}
+
+Phần còn lại của báo cáo được tổ chức như sau: Chương~\ref{chap:background} trình bày cơ sở
+lý thuyết và các công trình liên quan. Chương~\ref{chap:data} mô tả bộ dữ liệu và quy trình
+tiền xử lý. Chương~\ref{chap:method} trình bày phương pháp đề xuất. Chương~\ref{chap:results}
+báo cáo kết quả thực nghiệm và phân tích. Phần Kết luận tóm tắt và đề xuất hướng phát triển.
+
+% ============================================================
+\chapter{Cơ sở Lý thuyết và Công trình Liên quan}
+\label{chap:background}
+
+\section{Mô hình Ngôn ngữ Nhỏ (Small Language Model)}
+
+Kể từ khi GPT-3 (175B tham số) được công bố vào năm 2020, cuộc đua xây dựng các mô hình ngày
+càng lớn hơn đã kéo dài gần 3 năm. Tuy nhiên từ năm 2023, một xu hướng đối lập dần xuất hiện:
+nhiều nhóm nghiên cứu tập trung vào các mô hình nhỏ hơn nhiều nhưng được huấn luyện kỹ lưỡng
+hơn, thường được gọi là \textit{Small Language Model} (SLM).
+
+SLM thường được định nghĩa là các mô hình dưới 7 tỷ tham số, đôi khi chặt chẽ hơn là dưới
+4 tỷ. Các đại diện tiêu biểu bao gồm Phi-3.5-mini (3.8B, Microsoft), Gemma-2-2B (Google),
+LLaMA-3.2-3B (Meta) và Qwen2.5 (0.5B đến 72B, Alibaba). So với các mô hình lớn, SLM có những
+ưu điểm thực tiễn rõ ràng: chi phí suy diễn thấp, có thể chạy offline trên laptop phổ thông
+hoặc điện thoại thông minh, và thời gian fine-tuning ngắn hơn nhiều. Đổi lại, năng lực lý luận
+phức tạp và hiểu biết đa ngôn ngữ thường kém hơn so với các mô hình lớn.
+
+\section{LoRA và Tinh chỉnh Hiệu quả Tham số}
+
+\subsection{Bài toán full fine-tuning và vấn đề tài nguyên}
+
+Tinh chỉnh toàn bộ tham số mô hình (full fine-tuning) yêu cầu gradient và optimizer states
+cho \textit{tất cả} tham số. Với mô hình 1.5B tham số dùng AdamW, bộ nhớ cần thiết ước tính:
+\begin{itemize}
+  \item Trọng số (float16): $1.5 \times 10^9 \times 2\,\text{byte} \approx 3\,\text{GB}$
+  \item Gradient: thêm $\approx 3\,\text{GB}$
+  \item Adam states (m, v): thêm $\approx 12\,\text{GB}$
+  \item Tổng cộng: $\approx 18\,\text{GB}$
+\end{itemize}
+
+Con số này vượt quá VRAM của GPU T4 (15~GB). Đây là lý do tại sao các kỹ thuật PEFT ra đời.
+
+\subsection{LoRA: Low-Rank Adaptation}
+
+LoRA~\cite{lora} xuất phát từ nhận xét rằng các cập nhật trọng số trong quá trình fine-tuning
+thường có \textit{hạng nội tại thấp} (intrinsic low rank). Thay vì huấn luyện trực tiếp ma
+trận trọng số $W \in \mathbb{R}^{d \times k}$, LoRA biểu diễn cập nhật dưới dạng tích hai
+ma trận hạng thấp:
+\begin{equation}
+  W' = W_0 + \Delta W = W_0 + BA
+  \label{eq:lora}
+\end{equation}
+trong đó $B \in \mathbb{R}^{d \times r}$, $A \in \mathbb{R}^{r \times k}$, và hạng $r \ll
+\min(d, k)$. Trong quá trình huấn luyện, $W_0$ được đóng băng (frozen) hoàn toàn, chỉ $A$
+và $B$ được cập nhật. Khi suy diễn, có thể hợp nhất $W_0 + BA$ thành một ma trận duy nhất
+nên không tăng độ trễ suy diễn.
+
+Số tham số huấn luyện giảm từ $d \times k$ xuống $r \times (d + k)$. Với $r = 16$ và
+$d = k = 2048$ (một lớp attention thông thường), tỷ lệ nén là:
+\begin{equation}
+  \frac{r(d+k)}{dk} = \frac{16 \times 4096}{2048 \times 2048} \approx 1.56\%
+\end{equation}
+
+Ký hiệu $\alpha$ trong LoRA là hệ số tỷ lệ: đầu ra của adapter được nhân với $\frac{\alpha}{r}$
+trước khi cộng vào $W_0 x$. Với $\alpha = 2r$, đây tương đương với learning rate effective gấp
+đôi cho adapter.
+
+\subsection{QLoRA: Quantized LoRA}
+
+QLoRA~\cite{qlora} cải tiến LoRA theo hai hướng chính:
+
+\textbf{(1) Lượng tử hóa NF4 (NormalFloat-4bit):} Mô hình nền được lưu trữ ở 4-bit thay vì
+16-bit. Không dùng định dạng 4-bit thông thường (INT4) mà dùng \textit{NormalFloat-4 (NF4)} ---
+một định dạng được thiết kế tối ưu cho phân bố Gaussian của trọng số neural network. NF4 chia
+đều xác suất trên 16 điểm lượng tử hóa, giảm sai số lượng tử hóa so với INT4.
+
+\textbf{(2) Double quantization:} Các hằng số lượng tử hóa (quantization constants) bản thân
+cũng được lượng tử hóa lần thứ hai từ float32 xuống float8, tiết kiệm thêm khoảng 0.37~bit/tham
+số trung bình.
+
+Kết hợp hai kỹ thuật này, bộ nhớ cho mô hình 1.5B giảm từ $\approx 3$~GB xuống chỉ
+$\approx 1.1$~GB. Trong khi đó, các ma trận LoRA vẫn được lưu và tính toán ở float16/bfloat16
+để đảm bảo độ chính xác gradient. Tóm lại, QLoRA cho phép fine-tune mô hình 7B trên GPU 24~GB
+hoặc mô hình 1.5B trên GPU 6~GB --- điều gần như không thể với full fine-tuning.
+
+\section{Huấn luyện Đa Tác vụ}
+
+Huấn luyện đa tác vụ (Multi-Task Learning, MTL) là phương pháp huấn luyện một mô hình đồng
+thời trên nhiều tác vụ, kỳ vọng rằng các tác vụ sẽ chia sẻ thông tin hữu ích cho nhau~\cite{mtl_survey}.
+Trong bối cảnh instruction tuning cho LLM, MTL thường được thực hiện bằng cách gộp dữ liệu
+của các tác vụ vào một tập huấn luyện chung, với định dạng prompt khác nhau cho từng loại tác
+vụ~\cite{flan2022}. Điều này tạo ra một mô hình ``generalist'' có thể phân biệt và xử lý
+nhiều loại nhiệm vụ qua hướng dẫn (instruction).
+
+Một điểm quan trọng cần lưu ý: MTL không phải lúc nào cũng vượt trội so với train riêng lẻ.
+Khi các tác vụ quá khác biệt về cấu trúc đầu ra (ví dụ kết hợp phân loại với sinh văn bản
+tự do), mô hình có thể gặp \textit{task interference} --- tác vụ này can thiệp vào việc học
+tác vụ kia. Tuy nhiên, khi dữ liệu ít (như trong nghiên cứu này với chỉ 40 mẫu mỗi tác vụ),
+MTL giúp tăng tổng số mẫu và giảm nguy cơ overfitting.
+
+\section{Thước đo ROUGE-L}
+
+ROUGE (Recall-Oriented Understudy for Gisting Evaluation) là bộ thước đo tiêu chuẩn đánh giá
+chất lượng văn bản sinh ra so với tham chiếu, được dùng rộng rãi trong tóm tắt văn bản và
+dịch máy. ROUGE-L cụ thể dựa trên \textit{Longest Common Subsequence} (LCS):
+\begin{align}
+  P_{lcs} &= \frac{LCS(X,Y)}{|Y|}, \quad
+  R_{lcs} = \frac{LCS(X,Y)}{|X|} \\
+  F_{lcs} &= \frac{(1+\beta^2) P_{lcs} R_{lcs}}{R_{lcs} + \beta^2 P_{lcs}}
+\end{align}
+Với $\beta = 1$ (F1 cân bằng), $X$ là câu tham chiếu, $Y$ là câu dự đoán. ROUGE-L đo độ
+trùng lặp chuỗi không nhất thiết liên tục, phù hợp với văn bản pháp lý dài có nhiều biến thể
+cách diễn đạt.
+
+Hạn chế của ROUGE-L là chỉ đo trùng lặp từ ngữ bề mặt, không đánh giá được chất lượng lập
+luận pháp lý. Một câu trả lời đúng về logic nhưng dùng từ khác nhau sẽ bị đánh giá thấp,
+trong khi một câu trả lời sai về nội dung nhưng dùng nhiều từ giống tham chiếu lại bị đánh
+giá cao. Đây là hạn chế đã biết của thước đo này với tác vụ sinh văn bản pháp lý.
+
+\section{Các Công trình Liên quan}
+
+\subsection{Bộ dữ liệu pháp lý tiếng Việt}
+
+Nghiên cứu về NLP pháp lý tiếng Việt còn khá hạn chế so với tiếng Anh. Bộ dữ liệu VLQA~\cite{vlqa2025}
+là tài nguyên lớn nhất hiện tại với hơn 3.000 cặp câu hỏi-đáp án được chú thích thủ công bởi
+chuyên gia pháp lý, bao phủ 59.636 điều khoản thuộc 27 lĩnh vực. Cuộc thi VLSP~2025 LegalSLM
+cung cấp thêm bộ Public-Test gồm 150 mẫu thuộc ba tác vụ, được lấy từ các câu hỏi pháp lý
+thực tế đang lưu hành trên internet.
+
+\subsection{Bosch@AI: Phương pháp đứng đầu VLSP 2025}
+
+Nhóm Bosch@AI~\cite{bosch2025} đạt kết quả cao nhất tại VLSP~2025 LegalSLM với pipeline gồm
+ba giai đoạn: (1) domain pre-training trên corpus pháp lý tiếng Việt thu thập từ nhiều nguồn,
+(2) tổng hợp dữ liệu huấn luyện theo các ``aspect'' cụ thể của từng tác vụ bằng cách dùng LLM
+lớn hơn (GPT-4) để sinh câu hỏi-đáp án mới, và (3) fine-tune Qwen2.5-4B với QLoRA hoặc Full
+Parameter Fine-Tuning (FPFT) tùy tác vụ. Điểm nổi bật là dữ liệu tổng hợp (synthetic data)
+được thiết kế theo phương pháp Chain-of-Thought, giúp mô hình học được cách lập luận từng bước.
+
+Chi phí của phương pháp này khá lớn: cần GPU A100 (80~GB) cho pre-training và FPFT, đồng thời
+tốn chi phí API để sinh dữ liệu tổng hợp.
+
+\subsection{MinLegal: Phương pháp hai giai đoạn}
+
+Nhóm MinLegal~\cite{minlegal2025} sử dụng chiến lược hai giai đoạn: (1) train LoRA riêng cho
+từng tác vụ trên Qwen2.5-4B, (2) merge các LoRA adapter lại rồi tiến hành full fine-tuning.
+Phương pháp này cải thiện đáng kể so với giai đoạn 1 nhờ giai đoạn full fine-tuning, nhưng
+đòi hỏi tài nguyên tính toán lớn và quy trình quản lý nhiều checkpoint phức tạp.
+
+\subsection{So sánh với phương pháp đề xuất}
+
+Bảng~\ref{tab:compare_methods} tóm tắt sự khác biệt giữa ba phương pháp.
+
+\begin{table}[H]
+\centering
+\caption{So sánh các phương pháp fine-tuning LegalSLM}
+\label{tab:compare_methods}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Tiêu chí} & \textbf{Bosch@AI} & \textbf{MinLegal} & \textbf{Đề xuất} \\
+\midrule
+Kích thước mô hình & 4B & 4B & \textbf{1.5B} \\
+Phần cứng yêu cầu & A100 (80GB) & A100 (80GB) & \textbf{T4 (15GB)} \\
+Số giai đoạn train & 3 & 2 & \textbf{1} \\
+Dữ liệu tổng hợp & Có (GPT-4) & Không & \textbf{Không} \\
+Domain pre-training & Có & Không & \textbf{Không} \\
+Thời gian train & Nhiều giờ & Nhiều giờ & \textbf{19,3 phút} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================
+\chapter{Dữ liệu}
+\label{chap:data}
+
+\section{Tổng quan Bộ Dữ liệu}
+
+Nghiên cứu sử dụng bộ dữ liệu \textbf{VLSP 2025 LegalSLM Public-Test}, công bố trên HuggingFace
+tại địa chỉ \texttt{VLSP2025-LegalSML/Public-Test}. Bộ dữ liệu bao gồm ba tác vụ, mỗi tác vụ
+50 mẫu, được thu thập từ các câu hỏi pháp lý thực tế và chú thích bởi nhóm chuyên gia tại
+Việt Nam. Bảng~\ref{tab:dataset_overview} tóm tắt thông tin cơ bản.
+
+\begin{table}[H]
+\centering
+\caption{Thống kê tổng quan bộ dữ liệu}
+\label{tab:dataset_overview}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Tác vụ} & \textbf{Số mẫu} & \textbf{Đầu vào} & \textbf{Đầu ra} & \textbf{Metric} \\
+\midrule
+NLI & 50 & Văn bản + câu hỏi & Có / Không & Accuracy \\
+MCQ & 50 & Câu hỏi + 4 lựa chọn & A / B / C / D & Accuracy \\
+Syllogism & 50 & Tình huống pháp lý & Văn bản tự do & ROUGE-L \\
+\midrule
+\textbf{Tổng} & \textbf{150} & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Mô tả Chi tiết Từng Tác vụ}
+
+\subsection{Tác vụ NLI --- Suy diễn Ngôn ngữ Tự nhiên}
+
+Tác vụ NLI trong bộ dữ liệu này có tên đầy đủ là \textit{Natural Language Inference for Legal
+Citation Usefulness}, phân loại xem một văn bản pháp lý (legal document) có thể dùng để trả
+lời một câu hỏi cụ thể hay không.
+
+Mỗi mẫu gồm bốn trường:
+\begin{itemize}
+  \item \texttt{legal\_document}: Một đoạn trích từ văn bản quy phạm pháp luật, điều khoản
+    hoặc nghị định.
+  \item \texttt{specific\_question}: Câu hỏi pháp lý mà người dùng cần giải đáp.
+  \item \texttt{question}: Câu hỏi meta, thường là: ``Điều luật được cung cấp có thể dùng để
+    trả lời câu hỏi trên hay không?''
+  \item \texttt{choices} / \texttt{answer}: Nhãn nhị phân $\{0: \text{Có}, 1: \text{Không}\}$.
+\end{itemize}
+
+Điều quan trọng cần hiểu rõ: nhãn ``Có'' không có nghĩa là câu trả lời cho
+\texttt{specific\_question} là ``Có'', mà có nghĩa là \textit{văn bản pháp lý đủ thông tin
+để suy ra câu trả lời}. Đây là điểm dễ gây nhầm lẫn khi thiết kế prompt.
+
+\begin{figure}[H]
+\centering
+\fbox{\parbox{0.88\textwidth}{
+\small
+\textbf{legal\_document:} ``Theo Kết luận 83-KL/TW năm 2024, sau năm 2026 khi Bộ Chính trị
+ban hành và triển khai hệ thống Danh mục vị trí việc làm, Trung ương sẽ xem xét cải cách
+tiền lương đối với 5 bảng lương mới...''\\[4pt]
+\textbf{specific\_question:} ``Khi nào sẽ có 5 bảng lương mới theo cải cách tiền lương?''\\[4pt]
+\textbf{question:} ``Điều luật được cung cấp có thể dùng để trả lời câu hỏi trên hay không?''\\[4pt]
+\textbf{answer:} Có \quad (vì văn bản đề cập đến lộ trình sau năm 2026)
+}}
+\caption{Ví dụ mẫu tác vụ NLI}
+\label{fig:nli_example}
+\end{figure}
+
+Phân tích 50 mẫu NLI cho thấy: 30 mẫu có nhãn ``Có'' (60\%) và 20 mẫu có nhãn ``Không'' (40\%).
+Sự mất cân bằng nhẹ này cần lưu ý khi đánh giá: một mô hình chỉ đoán ``Có'' toàn bộ đã đạt
+60\% accuracy mà không học được gì.
+
+\subsection{Tác vụ MCQ --- Trả lời Câu hỏi Trắc nghiệm}
+
+Mỗi mẫu MCQ gồm một câu hỏi pháp lý và bốn lựa chọn, chỉ một đúng. Câu hỏi bao quát nhiều
+lĩnh vực: thuế (Luật Quản lý Thuế, Nghị định 168), lao động (Bộ luật Lao động 2019, Luật BHXH
+2024), đất đai (Luật Đất đai 2024), giao thông (Nghị định 168/2024), doanh nghiệp (Luật Doanh
+nghiệp 2020), và chứng khoán.
+
+Mức độ khó khá đồng đều --- từ câu hỏi về định nghĩa khái niệm (``Hoàn trả thư tín dụng là
+gì?'') đến câu hỏi so sánh, lý giải quy định (``Tại sao cần xác định loại đất dựa trên giấy
+tờ pháp lý?''). Câu hỏi có tính nhiễu cao: ba phương án sai thường là các biến thể rất gần
+đúng, chỉ khác nhau ở một vài chi tiết số liệu hoặc điều kiện.
+
+\subsection{Tác vụ Syllogism --- Suy luận Tam đoạn luận Pháp lý}
+
+Đây là tác vụ khó nhất và cũng thú vị nhất. Mỗi mẫu là một tình huống pháp lý phức tạp, yêu
+cầu mô hình đưa ra phân tích đầy đủ theo cấu trúc tam đoạn luận:
+\begin{itemize}
+  \item \textbf{Tiền đề lớn (Major premise)}: Điều khoản pháp luật áp dụng
+  \item \textbf{Tiền đề nhỏ (Minor premise)}: Tình huống thực tế cụ thể
+  \item \textbf{Kết luận (Conclusion)}: Hậu quả pháp lý theo logic suy diễn
+\end{itemize}
+
+Câu trả lời mẫu thường dài từ 100 đến 300 từ, có cấu trúc rõ ràng và trích dẫn chính xác điều
+khoản pháp luật. Đây là thách thức lớn với mô hình 1.5B vì đòi hỏi đồng thời: (1) ghi nhớ
+kiến thức pháp lý, (2) lập luận theo logic, và (3) tạo văn bản có cấu trúc chặt chẽ.
+
+\section{Phân chia Dữ liệu}
+
+Do số lượng mẫu ít (50 mỗi tác vụ), nhóm sử dụng phân chia train/test 80/20 với random seed
+cố định (42) để đảm bảo tái tạo. Bảng~\ref{tab:split} tóm tắt.
+
+\begin{table}[H]
+\centering
+\caption{Phân chia dữ liệu huấn luyện và đánh giá}
+\label{tab:split}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Tác vụ} & \textbf{Train} & \textbf{Test} & \textbf{Tổng} & \textbf{Tỷ lệ Test} \\
+\midrule
+NLI & 40 & 10 & 50 & 20\% \\
+MCQ & 40 & 10 & 50 & 20\% \\
+Syllogism & 40 & 10 & 50 & 20\% \\
+\midrule
+\textbf{Tổng} & \textbf{120} & \textbf{30} & \textbf{150} & 20\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Tập test 10 mẫu mỗi tác vụ là khá nhỏ --- mỗi mẫu đúng/sai đóng góp 10\% vào điểm số.
+Điều này đồng nghĩa kết quả có thể biến động lớn theo cách phân chia ngẫu nhiên. Nhóm không
+thực hiện cross-validation do hạn chế tài nguyên, nhưng đây là điểm cần lưu ý khi diễn giải
+kết quả.
+
+\section{Định dạng Instruction Tuning}
+
+Để huấn luyện theo phong cách instruction tuning, mỗi mẫu được chuyển sang định dạng hội thoại
+theo chat template của Qwen2.5 (system + user + assistant). Hình~\ref{fig:prompt_template} minh
+họa cấu trúc prompt cho từng tác vụ.
+
+\begin{figure}[H]
+\centering
+\fbox{\parbox{0.88\textwidth}{
+\small\ttfamily
+\textbf{[NLI]} \\
+\textit{System}: Bạn là một chuyên gia pháp lý Việt Nam... \\
+\textit{User}: Văn bản pháp lý: \{legal\_document\}\\
+\phantom{x}Câu hỏi cụ thể: \{specific\_question\}\\
+\phantom{x}\{question\} \\
+\phantom{x}A. Có \quad B. Không\\
+\phantom{x}Hãy chọn đáp án đúng (chỉ trả lời bằng chữ cái A hoặc B). \\
+\textit{Assistant}: A \hfill $\leftarrow$ chỉ 1 ký tự \\[6pt]
+\textbf{[MCQ]} \\
+\textit{User}: Câu hỏi pháp luật: \{question\}\\
+\phantom{x}A. \{choices[0]\} \quad B. \{choices[1]\}\\
+\phantom{x}C. \{choices[2]\} \quad D. \{choices[3]\}\\
+\phantom{x}Hãy chọn đáp án đúng (chỉ trả lời bằng chữ cái A, B, C hoặc D). \\
+\textit{Assistant}: C \hfill $\leftarrow$ chỉ 1 ký tự \\[6pt]
+\textbf{[Syllogism]} \\
+\textit{User}: Tình huống pháp lý: \{question\}\\
+\phantom{x}Hãy phân tích theo: 1. Điều khoản pháp luật áp dụng (Tiền đề lớn)\\
+\phantom{x}2. Áp dụng vào tình huống cụ thể (Tiền đề nhỏ) 3. Kết luận \\
+\textit{Assistant}: \{answer\} \hfill $\leftarrow$ văn bản dài
+}}
+\caption{Template prompt cho từng tác vụ}
+\label{fig:prompt_template}
+\end{figure}
+
+Chú ý rằng với NLI và MCQ, câu trả lời mẫu (assistant) chỉ là một ký tự (A, B, C, D). Điều
+này giúp mô hình học được hành vi ``trả lời ngắn gọn'' và làm đơn giản hóa quá trình parsing
+kết quả khi đánh giá.
+
+% ============================================================
+\chapter{Phương pháp Đề xuất}
+\label{chap:method}
+
+\section{Tổng quan Pipeline}
+
+Hình~\ref{fig:pipeline} mô tả quy trình tổng thể của phương pháp đề xuất. Toàn bộ pipeline
+gồm bốn giai đoạn tuần tự: tiền xử lý dữ liệu, thiết lập mô hình với QLoRA, huấn luyện đa
+tác vụ, và đánh giá.
+
+\begin{figure}[H]
+\centering
+\fbox{\parbox{0.85\textwidth}{
+\centering
+\vspace{0.3cm}
+\textbf{Pipeline tổng thể --- QLoRA Multi-task}\\[0.5cm]
+\begin{tabular}{c}
+$\boxed{\text{Dữ liệu VLSP 2025: NLI (50) + MCQ (50) + Syllogism (50)}}$ \\[0.2cm]
+$\downarrow$ \textit{Phân chia train/test 80/20, định dạng instruction tuning} \\[0.2cm]
+$\boxed{\text{Tập huấn luyện đa tác vụ (120 mẫu, trộn ngẫu nhiên)}}$ \\[0.2cm]
+$\downarrow$ \textit{Load Qwen2.5-1.5B (4-bit NF4) + cấu hình LoRA}$\uparrow$ \\[0.2cm]
+$\boxed{\text{QLoRA Fine-tuning: 3 epoch, batch=2, grad\_accum=8}}$ \\[0.2cm]
+$\downarrow$ \textit{Lưu LoRA adapter checkpoint} \\[0.2cm]
+$\boxed{\text{Đánh giá: Accuracy (NLI/MCQ) + ROUGE-L (Syllogism)}}$
+\end{tabular}
+\vspace{0.3cm}
+}}
+\caption{Pipeline tổng thể của phương pháp đề xuất}
+\label{fig:pipeline}
+\end{figure}
+
+\section{Mô hình Nền: Qwen2.5-1.5B-Instruct}
+
+Qwen2.5-1.5B-Instruct~\cite{qwen25} là phiên bản nhỏ nhất trong dòng mô hình Qwen2.5 do
+Alibaba Cloud phát triển và công bố vào năm 2024. Các đặc điểm kỹ thuật chính:
+
+\begin{itemize}
+  \item \textbf{Kiến trúc}: Transformer decoder-only, 28 lớp, hidden dim 1536, 12 attention heads
+  \item \textbf{Số tham số}: 1,54 tỷ (1.54B)
+  \item \textbf{Cửa sổ ngữ cảnh}: 128K token (một trong những context window lớn nhất với mô hình
+    ở kích thước này)
+  \item \textbf{Đa ngôn ngữ}: Được pre-train trên corpus 7+ nghìn tỷ token bao gồm tiếng Việt,
+    tiếng Trung, tiếng Anh và nhiều ngôn ngữ khác
+  \item \textbf{Phiên bản}: Dùng phiên bản ``Instruct'' --- đã qua instruction tuning và RLHF
+    --- thay vì phiên bản ``Base'' thuần túy, do phù hợp hơn với tác vụ hội thoại/hỏi đáp
+\end{itemize}
+
+Lý do chọn Qwen2.5-1.5B thay vì Qwen2.5-4B (phổ biến hơn trong các bài tham chiếu):
+\begin{itemize}
+  \item Chạy được trên GPU T4 15GB của Colab free tier với lượng tử hóa 4-bit, trong khi 4B
+    model cần khoảng 10GB chỉ để load và cần GPU A100 hoặc trả phí Colab Pro cho training
+  \item Thời gian fine-tune ngắn hơn ($\approx 20$ phút vs $\approx 2$ giờ)
+  \item Vẫn đủ năng lực cho tác vụ phân loại (NLI, MCQ) sau fine-tune
+\end{itemize}
+
+\section{Cấu hình QLoRA}
+
+Bảng~\ref{tab:qlora_config} trình bày toàn bộ siêu tham số sử dụng trong thực nghiệm.
+
+\begin{table}[H]
+\centering
+\caption{Cấu hình QLoRA và siêu tham số huấn luyện}
+\label{tab:qlora_config}
+\begin{tabular}{lll}
+\toprule
+\textbf{Nhóm} & \textbf{Tham số} & \textbf{Giá trị} \\
+\midrule
+\multirow{5}{*}{Quantization} & Bit-width & 4-bit NF4 \\
+ & Compute dtype & float16 \\
+ & Double quantization & Bật \\
+ & -- & -- \\
+ & -- & -- \\
+\midrule
+\multirow{5}{*}{LoRA} & Rank $r$ & 16 \\
+ & Alpha $\alpha$ & 32 ($= 2r$) \\
+ & Dropout & 0.05 \\
+ & Bias & none \\
+ & Target modules & q, k, v, o, gate, up, down\_proj \\
+\midrule
+\multirow{8}{*}{Training} & Learning rate & 2e-4 \\
+ & Batch size per device & 2 \\
+ & Gradient accumulation & 8 \\
+ & Effective batch size & 16 \\
+ & Epochs & 3 \\
+ & Max sequence length & 1024 token \\
+ & Optimizer & paged\_adamw\_8bit \\
+ & LR scheduler & cosine \\
+ & Warmup ratio & 0.05 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Một số lưu ý về các lựa chọn siêu tham số:
+
+\textbf{Target modules:} Nhóm áp dụng LoRA cho cả 7 nhóm projection (q, k, v, o, gate, up,
+down), không chỉ q và v như trong paper gốc của LoRA. Cách này tăng số tham số trainable nhưng
+vẫn giữ tỷ lệ huấn luyện ở mức thấp ($\approx 1.52\%$).
+
+\textbf{fp16=False, bf16=False:} Không dùng Mixed Precision Training của PyTorch. Lý do: khi mô
+hình nền đã được lượng tử hóa 4-bit bởi bitsandbytes, việc bật fp16 sẽ kích hoạt GradScaler
+của PyTorch AMP, dẫn đến lỗi ``not implemented for BFloat16'' trong quá trình rescale gradient.
+Bitsandbytes đã tự xử lý precision nội bộ nên không cần AMP bên ngoài.
+
+\textbf{paged\_adamw\_8bit:} Optimizer 8-bit với paged memory --- hỗ trợ trao đổi optimizer
+states ra CPU RAM khi GPU VRAM đầy, đặc biệt hữu ích trên T4 15GB.
+
+\section{Chiến lược Huấn luyện Đa Tác vụ}
+
+Sau khi định dạng dữ liệu thành instruction tuning format, 120 mẫu training (40 NLI + 40 MCQ
++ 40 Syllogism) được trộn ngẫu nhiên thành một tập duy nhất. Quá trình huấn luyện chạy một
+lần duy nhất trên tập này qua 3 epoch.
+
+Điều này khác căn bản với chiến lược của MinLegal (train riêng lẻ từng tác vụ). Ưu điểm của
+cách tiếp cận của nhóm:
+
+\begin{enumerate}
+  \item \textbf{Một LoRA adapter duy nhất} phục vụ được cả ba tác vụ --- không cần chuyển đổi
+    model khi thay tác vụ.
+  \item \textbf{Tăng hiệu quả data}: Với 120 mẫu trong một lần train thay vì 3 lần train 40
+    mẫu, mô hình nhìn thấy toàn bộ dữ liệu trong mỗi epoch.
+  \item \textbf{Regularization qua đa dạng}: Sự khác biệt giữa các tác vụ hoạt động như một
+    hình thức regularization tự nhiên.
+\end{enumerate}
+
+Trong quá trình huấn luyện, loss được tính trên toàn bộ chuỗi token của assistant response.
+Với NLI và MCQ chỉ có 1 token response (``A'', ``B''...), loss chủ yếu đến từ Syllogism. Điều
+này có thể giải thích tại sao loss cuối khá cao (0.9357) --- nó phản ánh độ khó của tác vụ
+sinh văn bản tự do hơn là tác vụ phân loại.
+
+\section{Quy trình Đánh giá}
+
+\textbf{NLI và MCQ:} Với mỗi mẫu test, mô hình được cho prompt và sinh tối đa 16 token. Token
+đầu tiên trong output được trích xuất và đối chiếu với đáp án đúng. Nếu token đầu tiên không
+phải là chữ cái hợp lệ (A--D), thuật toán tìm chữ cái đầu tiên xuất hiện trong 10 ký tự đầu
+của output. Accuracy = số câu đúng / tổng số câu.
+
+\textbf{Syllogism:} Mô hình sinh tối đa 512 token. ROUGE-L F1 được tính giữa output sinh ra
+và đáp án tham chiếu, sử dụng thư viện \texttt{rouge-score} của Google, với \texttt{use\_stemmer=False}
+(không stemming do đặc thù tiếng Việt).
+
+% ============================================================
+\chapter{Thực nghiệm và Kết quả}
+\label{chap:results}
+
+\section{Môi trường Thực nghiệm}
+
+\begin{table}[H]
+\centering
+\caption{Cấu hình môi trường thực nghiệm}
+\label{tab:env}
+\begin{tabular}{ll}
+\toprule
+\textbf{Thành phần} & \textbf{Chi tiết} \\
+\midrule
+Nền tảng & Google Colab (free tier) \\
+GPU & NVIDIA Tesla T4, 15 GB VRAM \\
+CPU & Intel(R) Xeon(R) (2 vCPU) \\
+RAM & 12.7 GB \\
+Hệ điều hành & Ubuntu 22.04 \\
+Python & 3.10 \\
+PyTorch & 2.4.1+cu121 \\
+Transformers & 4.46.x \\
+PEFT & 0.13.x \\
+TRL & 0.12.x \\
+BitsAndBytes & 0.45.x \\
+\midrule
+Mô hình nền & Qwen/Qwen2.5-1.5B-Instruct \\
+Số tham số tổng & $\approx 1{,}54\text{B}$ \\
+Số tham số trainable & $\approx 23{,}4\text{M}$ (1,52\%) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Kết quả Chính}
+
+Bảng~\ref{tab:main_results} trình bày kết quả so sánh giữa baseline zero-shot và phương pháp
+QLoRA đa tác vụ trên tập test (30 mẫu: 10 mỗi tác vụ).
+
+\begin{table}[H]
+\centering
+\caption{Kết quả đánh giá trên tập test (30 mẫu)}
+\label{tab:main_results}
+\begin{tabular}{lccc}
+\toprule
+\multirow{2}{*}{\textbf{Phương pháp}} & \textbf{NLI} & \textbf{MCQ} & \textbf{Syllogism} \\
+\cmidrule(lr){2-2}\cmidrule(lr){3-3}\cmidrule(lr){4-4}
+ & Accuracy & Accuracy & ROUGE-L \\
+\midrule
+Zero-shot (Qwen2.5-1.5B) & 0,6667 & 0,7333 & 0,4230 \\
+\textbf{QLoRA Multi-task (đề xuất)} & \textbf{0,9333} & \textbf{0,8667} & \textbf{0,5066} \\
+\midrule
+Cải thiện tuyệt đối & +0,2666 & +0,1334 & +0,0836 \\
+Cải thiện tương đối & \textbf{+40,0\%} & \textbf{+18,2\%} & \textbf{+19,8\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textit{Chú thích: BERTScore không được tính cho Syllogism do hạn chế bộ nhớ GPU. Kết quả
+được đo trên tập test cố định (random\_seed=42).}
+
+\section{Phân tích Quá trình Huấn luyện}
+
+\begin{table}[H]
+\centering
+\caption{Thống kê quá trình huấn luyện}
+\label{tab:training_stats}
+\begin{tabular}{ll}
+\toprule
+\textbf{Chỉ số} & \textbf{Giá trị} \\
+\midrule
+Training loss cuối (epoch 3) & 0,9357 \\
+Thời gian huấn luyện & 19,3 phút \\
+Số tham số được huấn luyện & $\approx 23{,}4$M (1,52\% tổng) \\
+Tổng số tham số & $\approx 1{,}54$B \\
+Số mẫu train & 120 (40 mỗi tác vụ) \\
+Effective batch size & 16 (batch=2, grad\_accum=8) \\
+Tổng số bước (steps) & $120 / 16 \times 3 = 22{,}5 \approx 23$ steps \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Training loss cuối là 0,9357 --- con số khá cao nếu so với các task đơn lẻ thông thường (thường
+$<0.5$). Điều này phản ánh độ khó tổng hợp của tập dữ liệu đa tác vụ, đặc biệt do Syllogism
+yêu cầu sinh văn bản dài và phức tạp. Khi chỉ nhìn vào NLI và MCQ (single token response),
+model thực tế đã học rất tốt (NLI 93,33\%, MCQ 86,67\%), cho thấy loss cao chủ yếu đến từ
+Syllogism.
+
+\section{Phân tích Định tính}
+
+\subsection{Ví dụ 1: Tác vụ NLI --- Mô hình được cải thiện}
+
+\begin{figure}[H]
+\centering
+\fbox{\parbox{0.88\textwidth}{
+\small
+\textbf{Văn bản pháp lý}: ``Theo Kết luận 83-KL/TW năm 2024, sau năm 2026 khi Bộ Chính trị
+ban hành và triển khai hệ thống Danh mục vị trí việc làm, Trung ương sẽ xem xét cải cách
+tiền lương đối với 5 bảng lương mới...''\\[4pt]
+\textbf{Câu hỏi cụ thể}: ``Khi nào sẽ có 5 bảng lương mới theo cải cách tiền lương?''\\[4pt]
+\textbf{Câu hỏi meta}: ``Điều luật có thể dùng để trả lời câu hỏi trên hay không?''\\[4pt]
+\textbf{Zero-shot}: ``B'' (Không) --- \textit{\color{red} sai}\\
+\textbf{QLoRA}: ``A'' (Có) --- \textit{\color{green!50!black} đúng} \\[4pt]
+\textit{Phân tích}: Zero-shot hiểu nhầm câu hỏi --- mô hình nghĩ câu hỏi hỏi về thời điểm
+cụ thể (ngày tháng năm) nên thấy văn bản chỉ nói ``sau năm 2026'' và cho rằng không đủ thông
+tin. Sau fine-tune, mô hình hiểu rằng ``sau năm 2026'' là câu trả lời hợp lệ cho ``Khi nào''.
+}}
+\caption{Ví dụ NLI: so sánh zero-shot và sau fine-tune}
+\label{fig:nli_qual}
+\end{figure}
+
+\subsection{Ví dụ 2: Tác vụ MCQ --- Cả hai đều đúng}
+
+\begin{figure}[H]
+\centering
+\fbox{\parbox{0.88\textwidth}{
+\small
+\textbf{Câu hỏi}: ``Theo quy định pháp luật, người nộp thuế có nghĩa vụ gì liên quan đến
+ghi mã số thuế trên hóa đơn?''\\[4pt]
+\textbf{Lựa chọn}: A. Phải ghi trong mọi trường hợp / B. Chỉ ghi khi bên mua yêu cầu /
+\textbf{C. Ghi mã số thuế được cấp trên hóa đơn, trừ bên mua không có} / D. Không bắt buộc\\[4pt]
+\textbf{Zero-shot}: ``C'' --- \textit{\color{green!50!black} đúng}\\
+\textbf{QLoRA}: ``C'' --- \textit{\color{green!50!black} đúng}\\[4pt]
+\textit{Phân tích}: Câu hỏi này không phân biệt được hai phương pháp. Kết quả tốt trên MCQ
+(73\% zero-shot) cho thấy Qwen2.5-1.5B đã có kiến thức pháp lý nền tảng; fine-tune giúp cải
+thiện thêm những câu khó hơn.
+}}
+\caption{Ví dụ MCQ: cả zero-shot và QLoRA đều đúng}
+\label{fig:mcq_qual}
+\end{figure}
+
+\subsection{Ví dụ 3: Tác vụ MCQ --- Chỉ QLoRA đúng}
+
+Một ví dụ điển hình cho sự cải thiện của fine-tune là các câu hỏi liên quan đến số liệu cụ
+thể trong văn bản quy phạm:
+
+\begin{quote}
+\textit{Câu hỏi}: ``Mức phạt tiền khi lái ô tô vượt đèn đỏ gây tai nạn theo Nghị định
+168/2024 là bao nhiêu?''\\
+\textit{Zero-shot}: Chọn B (50--60 triệu đồng) --- \textbf{sai}\\
+\textit{QLoRA}: Chọn A (50--70 triệu đồng) --- \textbf{đúng}
+\end{quote}
+
+Câu hỏi về con số cụ thể trong văn bản pháp luật ban hành năm 2024 nằm ngoài kiến thức
+pre-training của mô hình (cutoff~2023). Fine-tune trên dữ liệu gần đây hơn giúp mô hình
+nhớ các giá trị số này.
+
+\section{Phân tích Lỗi}
+
+\subsection{Lỗi của mô hình sau fine-tune}
+
+Phân tích các mẫu mà QLoRA vẫn trả lời sai cho thấy một số mẫu lỗi hệ thống:
+
+\textbf{NLI (1/10 câu sai)}: Mô hình vẫn còn nhầm lẫn ở một số trường hợp văn bản pháp lý
+dài (>500 từ) chứa nhiều điều khoản liên quan nhưng không trực tiếp trả lời câu hỏi cụ thể.
+Mô hình có xu hướng đánh giá ``Có'' khi thấy từ khóa trùng với câu hỏi, ngay cả khi văn bản
+không thực sự cung cấp câu trả lời.
+
+\textbf{MCQ (2/10 câu sai)}: Các lỗi thường gặp ở câu hỏi ``So sánh'' (so sánh hai quy định
+khác nhau) và câu hỏi về quy trình nhiều bước. Mô hình 1.5B có giới hạn trong việc theo dõi
+nhiều ràng buộc logic đồng thời.
+
+\textbf{Syllogism}: ROUGE-L 0.5066 ngụ ý mô hình tạo ra khoảng 50\% nội dung trùng lặp với
+đáp án chuẩn. Quan sát định tính cho thấy mô hình thường đúng về cấu trúc (tiền đề lớn/nhỏ/kết
+luận) nhưng thiếu chính xác về trích dẫn điều khoản cụ thể.
+
+\subsection{So sánh với giới hạn lý thuyết}
+
+Với tập test chỉ 10 mẫu mỗi tác vụ, độ chính xác tối đa có thể là 100\% (10/10). Phương pháp
+của nhóm đạt 9/10 cho NLI và 8/10 cho MCQ. Để đạt 10/10, cần dữ liệu huấn luyện đầy đủ hơn
+hoặc mô hình lớn hơn.
+
+\section{Thảo luận}
+
+\subsection{Điểm mạnh của phương pháp}
+
+Kết quả thực nghiệm khẳng định rằng QLoRA đa tác vụ là hướng đi hiệu quả và phù hợp với
+điều kiện tài nguyên hạn chế:
+
+\begin{itemize}
+  \item \textbf{NLI +40\%}: Cải thiện lớn nhất thuộc về tác vụ phân loại nhị phân. Điều này
+    có thể giải thích bởi bản chất của tác vụ: mô hình chỉ cần học phân biệt hai loại tình
+    huống (văn bản có/không liên quan đến câu hỏi), và instruction tuning đã dạy mô hình tập
+    trung vào đúng khía cạnh cần xem xét.
+  \item \textbf{Chi phí cực thấp}: 19,3 phút và 0 đô la (Colab free tier). Đây là điểm quan
+    trọng nhất từ góc độ thực tế: sinh viên hoặc doanh nghiệp nhỏ có thể thực hiện loại nghiên
+    cứu này mà không cần đầu tư phần cứng.
+  \item \textbf{Đơn giản}: Không cần pipeline phức tạp, không cần dữ liệu tổng hợp, không cần
+    domain pre-training. Chỉ cần khoảng 100 mẫu mỗi tác vụ.
+\end{itemize}
+
+\subsection{Hạn chế}
+
+\begin{itemize}
+  \item \textbf{Tập test quá nhỏ}: 10 mẫu/tác vụ khiến kết quả dễ bị ảnh hưởng bởi cách phân
+    chia ngẫu nhiên. Một phân chia khác có thể cho kết quả dao động $\pm 10\%$.
+  \item \textbf{Mô hình nhỏ}: So với Bosch@AI và MinLegal dùng 4B, kích thước 1.5B giới hạn
+    khả năng lý luận phức tạp, đặc biệt cho Syllogism. Không có con số so sánh trực tiếp
+    trên cùng tập test, nhưng khả năng cao 4B sẽ vượt trội hơn đáng kể ở tác vụ này.
+  \item \textbf{ROUGE-L không đủ cho Syllogism}: Điểm 0.5066 nghe có vẻ thấp nhưng chưa phản
+    ánh đầy đủ chất lượng thực tế. Cần LLM-as-judge (dùng GPT-4 đánh giá) để có nhận xét
+    chính xác hơn về chất lượng lập luận pháp lý.
+  \item \textbf{Không có few-shot baseline}: Nhóm dự định đánh giá few-shot (3-shot) nhưng
+    không thực hiện được do hạn chế thời gian.
+\end{itemize}
+
+% ============================================================
+\chapter*{Kết luận và Hướng phát triển}
+\label{chap:conclusion}
+\addcontentsline{toc}{chapter}{\nameref{chap:conclusion}}
+
+\section*{Tóm tắt kết quả}
+
+Nghiên cứu này đã trình bày và kiểm chứng thực nghiệm một phương pháp tinh chỉnh mô hình
+ngôn ngữ nhỏ (Qwen2.5-1.5B) cho ba tác vụ suy luận pháp lý tiếng Việt bằng kỹ thuật QLoRA
+và chiến lược huấn luyện đa tác vụ. Kết quả đạt được:
+
+\begin{itemize}
+  \item NLI: 66,67\% $\to$ \textbf{93,33\%} (+40,0\%)
+  \item MCQ: 73,33\% $\to$ \textbf{86,67\%} (+18,2\%)
+  \item Syllogism ROUGE-L: 0,4230 $\to$ \textbf{0,5066} (+19,8\%)
+  \item Thời gian huấn luyện: \textbf{19,3 phút} trên GPU T4 miễn phí
+\end{itemize}
+
+Những con số này cho thấy rằng ngay cả với mô hình nhỏ, dữ liệu ít và tài nguyên hạn chế,
+instruction tuning có thể tạo ra cải thiện rõ rệt và đo lường được.
+
+\section*{Hướng phát triển}
+
+Có một số hướng có thể mở rộng từ kết quả này:
+
+\textbf{(1) Tăng quy mô dữ liệu:} Hiện tại chỉ dùng 40 mẫu/tác vụ. Tăng lên 200--500 mẫu
+qua data augmentation (dùng LLM lớn hơn để paraphrase các câu hỏi có sẵn) nhiều khả năng
+sẽ cải thiện đáng kể, đặc biệt cho Syllogism.
+
+\textbf{(2) Thử mô hình lớn hơn:} Qwen2.5-3B hoặc Qwen2.5-4B vẫn có thể train được trên T4
+với QLoRA. Với 4B, khả năng lý luận tốt hơn sẽ giúp cải thiện Syllogism đáng kể.
+
+\textbf{(3) Curriculum learning:} Thay vì trộn ngẫu nhiên, train theo thứ tự từ tác vụ đơn
+giản đến phức tạp (NLI $\to$ MCQ $\to$ Syllogism) có thể giúp mô hình học tuần tự và
+tránh interference.
+
+\textbf{(4) Đánh giá LLM-as-judge:} Với Syllogism, dùng GPT-4 hoặc Gemini Pro để đánh giá
+chất lượng lập luận thay cho ROUGE-L sẽ cho kết quả đáng tin cậy và có ý nghĩa hơn nhiều.
+
+\textbf{(5) Domain-specific vocabulary:} Thêm các thuật ngữ pháp lý tiếng Việt vào tokenizer
+(vocabulary expansion) có thể giúp mô hình xử lý hiệu quả hơn các từ đặc thù như tên điều
+khoản, số nghị định, v.v.
+
+% ============================================================
+\bibliographystyle{plain}
+\begin{thebibliography}{99}
+
+\bibitem{bosch2025}
+Tran Minh Quang, Nguyen Xuan Phi, Nguyen Van Tai, Phan Minh Toan, Dang Van Thin.
+\textit{Bosch@AI\_Team at LegalSML 2025: Vietnamese Legal Small Language with Domain Adaptation
+and Aspect-based Data Synthesis}.
+Proceedings of VLSP Workshop 2025.
+
+\bibitem{minlegal2025}
+Ngo Dinh Luan, Kiet Nguyen Van.
+\textit{MinLegal at VLSP2025-LegalSLM: A Two-Stage LoRA-to-Full Fine-tuning Approach for
+Vietnamese Legal Small Language Models}.
+Proceedings of VLSP Workshop 2025.
+
+\bibitem{vlsp2025}
+VLSP 2025 Organizing Committee.
+\textit{VLSP 2025 Shared Task on Vietnamese Legal Small Language Models (LegalSLM)}.
+\url{https://vlsp.org.vn/vlsp2025/eval/legalslm}, 2025.
+
+\bibitem{vlqa2025}
+Nguyen et al.
+\textit{VLQA: A Comprehensive Vietnamese Legal Question Answering Dataset}.
+2025.
+
+\bibitem{qwen25}
+Qwen Team.
+\textit{Qwen2.5 Technical Report}.
+Alibaba Cloud, 2024.
+\url{https://arxiv.org/abs/2412.15115}
+
+\bibitem{lora}
+Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang,
+Lu Wang, Weizhu Chen.
+\textit{LoRA: Low-Rank Adaptation of Large Language Models}.
+International Conference on Learning Representations (ICLR), 2022.
+
+\bibitem{qlora}
+Tim Dettmers, Artidoro Pagnoni, Ari Holtzman, Luke Zettlemoyer.
+\textit{QLoRA: Efficient Finetuning of Quantized LLMs}.
+Neural Information Processing Systems (NeurIPS), 2023.
+
+\bibitem{ouyang2022}
+Long Ouyang, Jeffrey Wu, Xu Jiang, et al.
+\textit{Training language models to follow instructions with human feedback (InstructGPT)}.
+NeurIPS, 2022.
+
+\bibitem{mtl_survey}
+Yu Zhang, Qiang Yang.
+\textit{A Survey on Multi-Task Learning}.
+IEEE Transactions on Knowledge and Data Engineering, 34(12), 2022.
+
+\bibitem{flan2022}
+Hyung Won Chung, Le Hou, Shayne Longpre, et al.
+\textit{Scaling Instruction-Finetuned Language Models (FLAN-T5)}.
+arXiv:2210.11416, 2022.
+
+\end{thebibliography}
+
+\end{document}

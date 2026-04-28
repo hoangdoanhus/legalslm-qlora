@@ -1,0 +1,226 @@
+\documentclass[fontsize=13pt,a4paper,oneside, DIV=calc, chapterprefix=true]{scrbook} % twoside for draft
+ 
+%\documentclass[13pt,a4paper,oneside]{book} % twoside for draf
+
+%\usepackage{babel}
+\usepackage[utf8]{vietnam}
+%\usepackage{times}
+%\usepackage{graphicx}
+
+\usepackage{husthesis}
+\usepackage{enumitem}
+
+ 
+\usepackage{tipa}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{mathptmx}	% same Time New Roma
+\usepackage{amsmath}
+\usepackage{amsfonts}
+%\usepackage{sty/ipa}
+%\renewcommand{\rmdefault}{phv} % Arial
+%\renewcommand{\sfdefault}{phv} % Arial
+%\renewcommand\thesection{\arabic{section}}
+
+\usepackage{array}
+\newcolumntype{P}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{M}[1]{>{\centering\arraybackslash}m{#1}}
+\usepackage{fancyhdr}
+\usepackage{multirow}
+\usepackage{algorithm2e}
+\usepackage{float}
+\usepackage{listings}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+}
+
+
+\crname{Tiểu luận khoa học}
+\ctname{NGHIÊN CỨU PHÁT TRIỂN \\
+MỘT HỆ THỐNG THỬ NGHIỆM}
+\cstuname{
+Sinh viên 1 - MSV \\
+Sinh viên 2 - MSV \\
+Sinh viên 3 - MSV \\
+Sinh viên 4 - MSV\\
+}
+
+\csMajor{Khoa học máy tính và thông tin}
+\csProgram{chuẩn}
+\csSupervise{TS. Nguyễn Văn A}
+\cttime{2024}
+
+\thesislayout
+
+\begin{document}
+
+\coverpage
+
+\secondcoverpage
+
+\frontmatter
+
+
+\begin{declaration}
+Nhóm sinh viên ... cam đoan ...
+\end{declaration}
+
+\begin{acknowledgments}
+Để hoàn thành  
+\end{acknowledgments}
+
+\begin{abstract}
+Nội dung chính của tiểu luận ...    
+\end{abstract}
+ 
+% Danh sách từ viết tắt
+\nomenclature{CIS}{Computer and Information Science}
+\printnomenclature
+
+\tableofcontents
+% \listoftables
+\listoffigures
+%\listofalgorithms
+
+\mainmatter
+
+\fancyhead{}  % Clears all page headers and footers
+%\rhead{\thepage}  % Sets the right side header to show the page number
+%\lhead{}  % Clears the left side page header
+%\fancyfoot[positions]{footer}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\pagestyle{fancy}  % Finally, use the "fancy" page style to implement the FancyHdr headers
+%
+
+\chapter*{Giới thiệu }
+\label{chap:intro}
+\addcontentsline{toc}{chapter}{\nameref{chap:intro}}
+	
+{Giới thiệu đề tài}: Đặt vấn đề
+ 
+{Mục tiêu của đề tài}: Giới hạn mục tiêu đề tài
+
+{Cấu trúc báo cáo}
+ 
+\begin{itemize}
+\item Giới thiệu 
+\item Mục 1: Tổng quan một số công trình nghiên cứu liên quan tới đề tài: hướng tiếp cận, mô hình sử dụng và kết quả đạt được.
+\item Mục 2 ...
+\item Mục 3 ...
+\item Kết luận: Tóm tắt kết quả đạt được, hướng phát triển tương lai
+\end{itemize}
+
+
+
+\chapter{Tổng quan  }
+
+Chú ý: các tên chương/mục ở đây chỉ là ví dụ minh hoạ cách soạn thảo, không phải tên chương/mục thật. Sinh viên cần đặt tên chương/mục theo cấu trúc mong muốn của mình.
+
+\section{Tổng quan}
+
+Trong phần này ta có thể tham chiếu tới tài liệu kiểu~\cite{szemeredi1983extremal}.
+
+
+
+
+ Báo cáo tối thiểu là 15 trang, được viết bằng latex theo định dạng này.
+
+Cần có một đoạn ngắn giới thiệu về các nội dung trong báo cáo của nhóm.
+
+Ví dụ: Báo cáo gồm có ... phần:
+\begin{itemize}
+  \item Chương 1: trình bày về ...
+  \item Chương 2: trình bày về ...
+  \item Chương 3: trình bày về ...
+  \item Kết luận
+\end{itemize}
+
+\section{Nội dung nghiên cứu 1}
+Ví dụ về cách chèn hình ảnh~\ref{hinh1}.
+
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[scale=0.5]{image/bookfull.png}
+    \caption{Image example}
+\label{hinh1}
+\end{figure}
+
+\section{Nội dung nghiên cứu 2}
+
+\subsection{Ví dụ soạn công thức}
+Một số ví dụ về các công thức toán học:
+
+$$
+l'_1 = \frac{l_1 - \bar{l_1}}{\sigma_{l1}}\quad\quad\quad
+l'_2 = \frac{l_2 - \bar{l_2}}{\sigma_{l2}}
+$$
+
+
+Và một công thức khác:
+
+$$
+c(l_1, l_2) = -\log\left(1-\int_{l'_1}^{l'_2}e^{\frac{-t^2}{2}}dt\right)
+$$
+
+\subsection{Ví dụ soạn công thức 2}
+ 
+Một công thức toán học phức tạp hơn:
+
+$$
+m_{ij} = \mathrm{min} \left\{
+    \begin{array}{lll}
+      m_{i-1,j-1} & + c(a_{i-1}, b_{j-1}) & \textrm{(simple)}\\
+      m_{i-1,j}   & + c(a_{i-1}, 0) + pen_{del} & \textrm{(delete)}\\
+      m_{i,j-1}   & + c(0, b_{j-1}) + pen_{ins} & \textrm{(insert)}\\
+      m_{i-2,j-1} & + c(a_{i-1} + a_{i-2}, b_{j-1}) + pen_{comp} & \textrm{(compression)}\\
+      m_{i-1,j-2} & + c(a_{i-1}, b_{j-1} + b_{j-2}) + pen_{exp} & \textrm{(expansion)}\\
+      m_{i-2,j-2} & + c(a_{i-1} + a_{i-2}, b_{j-1} + b_{j-2}) + pen_{mix} & \textrm{(mix)}\\
+    \end{array}
+    \right.
+$$
+
+$$\alpha = \frac{1}{\beta} =\sum_{n=0}^{\infty}\frac{1}{n}$$
+
+Bảng~\ref{bang1} minh hoạ cách chèn bảng.
+
+\begin{table}[h!]
+\begin{center}
+\begin{tabular}{ |c| l| r| c| } % c means center, l for left, r for right
+\hline
+ & Column 1 & Column 2 & Column 3 \\ 
+\hline
+ Line 1 & 276.27 & 326.55 & 237.86 \\  
+ \hline
+\end{tabular}
+\end{center}
+\caption{Tiêu đề của bảng} 
+\label{bang1}
+\end{table}
+
+\chapter{Nội dung thực hiện}
+
+\chapter*{Kết luận}
+\label{chap:concl}
+\addcontentsline{toc}{chapter}{\nameref{chap:concl}}
+
+
+Trình bày tóm tắt những gì bạn đã làm được
+
+Trình bày về dự định trong tương lai, hướng nghiên cứu tiếp theo.
+
+Tham khảo thêm về cách viết tài liệu sử dụng Latex:
+
+\url{https://www.overleaf.com/learn/latex/Learn_LaTeX_in_30_minutes}
+
+\bibliographystyle{plain} % ieeetr
+\bibliography{refs} 
+
+\end{document}

@@ -1,0 +1,369 @@
+% ============================================================
+%  Slides thuyết trình
+%  Đề tài: Fine-tuning Qwen2.5-1.5B với QLoRA
+%          cho Suy luận Pháp lý Tiếng Việt
+% ============================================================
+\documentclass{beamer}
+
+\usepackage[utf8]{vietnam}
+\usepackage{color}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{amsmath}
+
+\usetheme{CambridgeUS}
+\usecolortheme{beaver}
+
+\title[LegalSLM --- QLoRA]{Fine-tuning Qwen2.5-1.5B với QLoRA\\
+       cho Suy luận Pháp lý Tiếng Việt}
+
+\author[Lương, Hoàng, Duy]{Lương Vân Khoa \quad Doãn Sơn Hoàng \quad Bàn Khánh Duy}
+
+\institute[HUS -- VNU]{Khoa Toán -- Cơ -- Tin học\\
+                        Trường ĐH Khoa học Tự nhiên, ĐHQGHN}
+
+\date[2026]{Hà Nội, tháng 4 năm 2026}
+
+\setbeamerfont{frametitle}{series=\bfseries}
+\setbeamerfont{title}{series=\bfseries}
+\setbeamertemplate{caption}{\raggedright\insertcaption\par}
+
+\AtBeginSection[]{
+  \begin{frame}
+    \frametitle{Nội dung}
+    \tableofcontents[currentsection]
+  \end{frame}
+}
+
+\begin{document}
+
+\frame[plain]{\titlepage}
+\setcounter{framenumber}{0}
+
+\begin{frame}{Nội dung trình bày}
+  \tableofcontents
+\end{frame}
+
+% ============================================================
+\section{Giới thiệu bài toán}
+
+\begin{frame}{Bài toán: Mô hình ngôn ngữ pháp lý tiếng Việt}
+  \begin{block}{Thực trạng}
+    \begin{itemize}
+      \item Hệ thống pháp luật VN: hàng chục nghìn văn bản, cập nhật liên tục
+      \item Người dùng khó tra cứu, đối chiếu điều khoản
+      \item LLM lớn (GPT-4, Gemini) chi phí cao, không chuyên biệt tiếng Việt
+    \end{itemize}
+  \end{block}
+  \begin{block}{Hướng giải quyết}
+    \textbf{Small Language Models (SLM)} $\leq$ 4B tham số:
+    \begin{itemize}
+      \item Chạy được trên phần cứng thông thường
+      \item Fine-tune chuyên sâu cho lĩnh vực pháp lý VN
+      \item Chi phí thấp, triển khai offline được
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\begin{frame}{Cuộc thi VLSP 2025 LegalSLM}
+  \begin{columns}
+    \begin{column}{0.5\textwidth}
+      \textbf{Ba tác vụ:}
+      \begin{enumerate}
+        \item \textbf{NLI}: Văn bản pháp lý có trả lời được câu hỏi không? (Có/Không)
+        \item \textbf{MCQ}: Chọn đáp án đúng trong 4 lựa chọn
+        \item \textbf{Syllogism}: Lập luận tam đoạn luận pháp lý
+      \end{enumerate}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \textbf{Ràng buộc:}
+      \begin{itemize}
+        \item Mô hình $\leq$ 4B tham số
+        \item Dữ liệu: 50 mẫu/tác vụ (Public-Test)
+        \item Metric: Accuracy (NLI, MCQ), ROUGE-L (Syllogism)
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Nghiên cứu này làm gì khác?}
+  \begin{table}
+    \centering
+    \small
+    \begin{tabular}{lccc}
+      \toprule
+      \textbf{Tiêu chí} & \textbf{Bosch@AI} & \textbf{MinLegal} & \textbf{Nhóm} \\
+      \midrule
+      Mô hình & 4B & 4B & \textbf{1.5B} \\
+      GPU & A100 80GB & A100 80GB & \textbf{T4 15GB} \\
+      Giai đoạn train & 3 & 2 & \textbf{1} \\
+      Data tổng hợp & GPT-4 & Không & \textbf{Không} \\
+      Thời gian & Nhiều giờ & Nhiều giờ & \textbf{19 phút} \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+  \vspace{0.3cm}
+  \begin{alertblock}{Mục tiêu của nhóm}
+    Chứng minh QLoRA đa tác vụ hiệu quả với \textbf{tài nguyên tối thiểu}
+    (Colab free, không cần dữ liệu tổng hợp)
+  \end{alertblock}
+\end{frame}
+
+% ============================================================
+\section{Cơ sở lý thuyết}
+
+\begin{frame}{LoRA: Low-Rank Adaptation}
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      Thay vì train $W \in \mathbb{R}^{d \times k}$ ($dk$ params):
+      \[W' = W_0 + \underbrace{BA}_{\Delta W}, \quad r \ll \min(d,k)\]
+      \begin{itemize}
+        \item $B \in \mathbb{R}^{d \times r}$, $A \in \mathbb{R}^{r \times k}$
+        \item $W_0$ đóng băng; chỉ train $A$, $B$
+        \item Giảm params từ $dk$ xuống $r(d+k)$
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.45\textwidth}
+      \begin{block}{Với $r=16$, $d=k=2048$:}
+        \[
+          \frac{r(d+k)}{dk} = \frac{16 \times 4096}{2048^2} \approx 1.6\%
+        \]
+      \end{block}
+      \vspace{0.2cm}
+      $\Rightarrow$ 98.4\% tham số không cần gradient!
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{QLoRA: Quantized LoRA}
+  \textbf{Hai cải tiến chính so với LoRA gốc:}
+  \vspace{0.3cm}
+  \begin{block}{(1) Lượng tử hóa NF4 (4-bit)}
+    \begin{itemize}
+      \item Mô hình nền lưu ở 4-bit NormalFloat thay vì float16
+      \item NF4 phân bố đều trên 16 điểm theo phân phối Gaussian
+      \item VRAM: $1.5\text{B} \times 2\text{byte} \approx 3\text{GB}$\\
+        $\to 1.5\text{B} \times 0.5\text{byte} \approx 1.1\text{GB}$
+    \end{itemize}
+  \end{block}
+  \begin{block}{(2) Double Quantization}
+    \begin{itemize}
+      \item Hằng số lượng tử hóa (float32) $\to$ float8
+      \item Tiết kiệm thêm $\approx 0.37$ bit/tham số
+    \end{itemize}
+  \end{block}
+  LoRA adapters vẫn tính ở float16 để giữ độ chính xác gradient
+\end{frame}
+
+\begin{frame}{Huấn luyện Đa Tác vụ (Multi-Task Learning)}
+  \begin{columns}
+    \begin{column}{0.5\textwidth}
+      \textbf{Cách thông thường:}\\
+      Train 3 lần riêng lẻ:\\
+      NLI $\to$ LoRA$_1$\\
+      MCQ $\to$ LoRA$_2$\\
+      Syl $\to$ LoRA$_3$\\[6pt]
+      Phức tạp, 3 checkpoint
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \textbf{Phương pháp đề xuất:}\\
+      Trộn 3 tác vụ $\to$ train 1 lần:\\
+      [NLI + MCQ + Syl] $\to$ LoRA$_{\text{unified}}$\\[6pt]
+      Đơn giản, 1 checkpoint\\
+      Mô hình phân biệt tác vụ qua \textit{instruction}
+    \end{column}
+  \end{columns}
+  \vspace{0.4cm}
+  \begin{alertblock}{Lưu ý}
+    Với dữ liệu ít (40 mẫu/tác vụ), gộp tăng tổng mẫu và giảm overfitting
+  \end{alertblock}
+\end{frame}
+
+% ============================================================
+\section{Dữ liệu và Phương pháp}
+
+\begin{frame}{Bộ dữ liệu VLSP 2025 LegalSLM}
+  \begin{table}
+    \centering
+    \begin{tabular}{lccc}
+      \toprule
+      \textbf{Tác vụ} & \textbf{Mẫu} & \textbf{Train / Test} & \textbf{Metric} \\
+      \midrule
+      NLI & 50 & 40 / 10 & Accuracy \\
+      MCQ & 50 & 40 / 10 & Accuracy \\
+      Syllogism & 50 & 40 / 10 & ROUGE-L \\
+      \midrule
+      Tổng & 150 & 120 / 30 & -- \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+  \vspace{0.3cm}
+  \begin{itemize}
+    \item Nguồn: \texttt{VLSP2025-LegalSML/Public-Test} (HuggingFace)
+    \item Lĩnh vực: thuế, lao động, đất đai, giao thông, doanh nghiệp...
+    \item Phân chia cố định: \texttt{random\_seed=42}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Ví dụ từng tác vụ}
+  \textbf{NLI:}
+  \begin{quote}
+    \small \textit{Văn bản}: ``...sau năm 2026, Trung ương sẽ xem xét cải cách 5 bảng lương mới...''\\
+    \textit{Câu hỏi}: ``Khi nào có 5 bảng lương mới?''\\
+    \textbf{Nhãn}: Có (văn bản đủ thông tin)
+  \end{quote}
+  \textbf{MCQ:}
+  \begin{quote}
+    \small \textit{Câu hỏi}: ``Mức phạt lái ô tô vượt đèn đỏ gây tai nạn theo NĐ 168/2024?''\\
+    \textit{A. 18--20M} \quad \textbf{B. 20--22M đồng} \quad \textit{C. 40--50M} \quad \textit{D. 50--70M}
+  \end{quote}
+  \textbf{Syllogism:}
+  \begin{quote}
+    \small \textit{Câu hỏi}: Tình huống vi phạm luật lao động, yêu cầu phân tích theo tam đoạn luận\\
+    \textit{Đầu ra}: Tiền đề lớn (điều khoản) + Tiền đề nhỏ (tình huống) + Kết luận
+  \end{quote}
+\end{frame}
+
+\begin{frame}{Pipeline phương pháp đề xuất}
+  \begin{center}
+  \begin{tabular}{c}
+    $\boxed{\text{VLSP 2025: NLI + MCQ + Syllogism (150 mẫu)}}$ \\[0.2cm]
+    $\downarrow$ \small phân chia 80/20, định dạng instruction tuning\\[0.2cm]
+    $\boxed{\text{Tập train đa tác vụ (120 mẫu, trộn ngẫu nhiên)}}$ \\[0.2cm]
+    $\downarrow$ \small load Qwen2.5-1.5B (4-bit NF4) + cấu hình LoRA\\[0.2cm]
+    $\boxed{\text{QLoRA Fine-tuning: 3 epoch, 19,3 phút (GPU T4)}}$ \\[0.2cm]
+    $\downarrow$ \small lưu LoRA adapter\\[0.2cm]
+    $\boxed{\text{Đánh giá: Accuracy (NLI/MCQ) + ROUGE-L (Syl)}}$
+  \end{tabular}
+  \end{center}
+\end{frame}
+
+\begin{frame}{Cấu hình QLoRA}
+  \begin{columns}
+    \begin{column}{0.5\textwidth}
+      \textbf{Quantization:}
+      \begin{itemize}
+        \item 4-bit NF4
+        \item Double quantization: Bật
+        \item Compute dtype: float16
+      \end{itemize}
+      \textbf{LoRA:}
+      \begin{itemize}
+        \item Rank $r = 16$
+        \item Alpha $\alpha = 32$
+        \item Target: q,k,v,o,gate,up,down
+        \item Trainable: 23,4M / 1,54B = \textbf{1,52\%}
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \textbf{Training:}
+      \begin{itemize}
+        \item LR = 2e-4, cosine schedule
+        \item Batch = 2, grad\_accum = 8
+        \item \textbf{Effective batch = 16}
+        \item Epochs = 3
+        \item Optimizer: paged\_adamw\_8bit
+        \item fp16 = False (BnB xử lý nội bộ)
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ============================================================
+\section{Kết quả Thực nghiệm}
+
+\begin{frame}{Kết quả chính}
+  \begin{table}
+    \centering
+    \begin{tabular}{lccc}
+      \toprule
+      \textbf{Phương pháp} & \textbf{NLI Acc} & \textbf{MCQ Acc} & \textbf{Syl ROUGE-L} \\
+      \midrule
+      Zero-shot & 0,6667 & 0,7333 & 0,4230 \\
+      \textbf{QLoRA Multi-task} & \textbf{0,9333} & \textbf{0,8667} & \textbf{0,5066} \\
+      \midrule
+      Cải thiện & \textbf{+40,0\%} & \textbf{+18,2\%} & \textbf{+19,8\%} \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+  \vspace{0.4cm}
+  \begin{block}{Thống kê huấn luyện}
+    Training loss = 0,9357 \quad | \quad Thời gian = \textbf{19,3 phút} \\
+    Params trainable = 23,4M (\textbf{1,52\%} tổng 1,54B)
+  \end{block}
+\end{frame}
+
+\begin{frame}{Phân tích kết quả}
+  \begin{block}{NLI: +40,0\% --- Cải thiện lớn nhất}
+    \begin{itemize}
+      \item Zero-shot nhầm lẫn giữa câu hỏi meta và câu hỏi cụ thể
+      \item Fine-tune dạy mô hình tập trung đúng vào quan hệ văn bản-câu hỏi
+    \end{itemize}
+  \end{block}
+  \begin{block}{MCQ: +18,2\%}
+    \begin{itemize}
+      \item Cải thiện rõ ở câu hỏi về số liệu cụ thể (nằm ngoài training data gốc)
+      \item Đặc biệt hiệu quả với các nghị định ban hành sau 2023
+    \end{itemize}
+  \end{block}
+  \begin{block}{Syllogism: +19,8\% ROUGE-L}
+    \begin{itemize}
+      \item Cải thiện cấu trúc đầu ra (tiền đề/kết luận)
+      \item Mô hình 1.5B vẫn hạn chế trong trích dẫn điều khoản chính xác
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\begin{frame}{So sánh ví dụ định tính (NLI)}
+  \begin{table}
+    \small
+    \begin{tabular}{lll}
+      \toprule
+      \textbf{Thành phần} & \textbf{Nội dung} & \textbf{} \\
+      \midrule
+      Văn bản & ``...sau năm 2026, cải cách 5 bảng lương...'' & \\
+      Câu hỏi cụ thể & ``Khi nào có 5 bảng lương mới?'' & \\
+      Câu hỏi meta & ``Văn bản có trả lời được không?'' & \\
+      \midrule
+      Zero-shot & ``B'' (Không) & \textcolor{red}{$\times$ sai} \\
+      QLoRA & ``A'' (Có) & \textcolor{green!50!black}{$\checkmark$ đúng} \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+  \vspace{0.3cm}
+  \textit{Nhận xét}: Zero-shot thấy ``sau năm 2026'' (không cụ thể) $\to$ trả lời ``Không''.
+  QLoRA hiểu ``sau năm 2026'' \textbf{là} câu trả lời hợp lệ cho ``Khi nào''.
+\end{frame}
+
+% ============================================================
+\section{Kết luận}
+
+\begin{frame}{Tóm tắt đóng góp}
+  \begin{enumerate}
+    \item \textbf{Phương pháp}: QLoRA + Multi-task instruction tuning cho 3 tác vụ pháp lý
+      tiếng Việt bằng \textbf{1 giai đoạn duy nhất}
+    \item \textbf{Kết quả}: Cải thiện 18--40\% so với zero-shot baseline trên cả 3 tác vụ
+    \item \textbf{Hiệu quả tài nguyên}: 19,3 phút, GPU T4 miễn phí, không cần dữ liệu tổng hợp
+    \item \textbf{Tái tạo}: Notebook Google Colab công khai, chạy trên free tier
+  \end{enumerate}
+\end{frame}
+
+\begin{frame}{Hướng phát triển}
+  \begin{itemize}
+    \item \textbf{Tăng dữ liệu}: Augmentation bằng LLM $\to$ 200--500 mẫu/tác vụ
+    \item \textbf{Mô hình lớn hơn}: Qwen2.5-3B/4B vẫn chạy được trên T4 (QLoRA)
+    \item \textbf{Curriculum learning}: Train theo thứ tự NLI $\to$ MCQ $\to$ Syllogism
+    \item \textbf{Đánh giá tốt hơn}: LLM-as-judge (GPT-4) cho Syllogism thay ROUGE-L
+    \item \textbf{Domain vocabulary}: Thêm thuật ngữ pháp lý VN vào tokenizer
+  \end{itemize}
+\end{frame}
+
+\thispagestyle{empty}
+\begin{frame}[c]
+  \begin{center}
+    \LARGE{\textbf{XIN CHÂN THÀNH CẢM ƠN!}}\\[1cm]
+    \large Nhóm xin lắng nghe câu hỏi và góp ý
+  \end{center}
+\end{frame}
+
+\end{document}
